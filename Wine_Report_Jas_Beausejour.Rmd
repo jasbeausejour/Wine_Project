@@ -1,0 +1,210 @@
+---
+title: "Predicting Wine Ratings with Machine Learning"
+author: "by Jas Beausejour"
+date: "January 15th, 2019"
+output: html_notebook
+---
+
+## Introduction
+
+## Dataset
+
+In this report, we will be using a dataset created by *zackthoutt* which can easily be downloaded from **Kaggle** at [this link]("https://www.kaggle.com/zynicide/wine-reviews"). 
+
+To ensure that this code runs on a standalone basis, I include code that downloads the dataset into the user's temporary files from my GitHub repository.
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+# First, I load some libraries to ensure that everything runs smoothly.
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(caret)
+library(knitr)
+library(kableExtra)
+
+# Now, I create a temporary file
+dl <- tempfile()
+
+# Here, we download the dataset in its raw format from my GitHub repository
+download.file("https://raw.githubusercontent.com/jasbeausejour/Wine_Project/master/Data/winemag-data-130k-v2.csv",dl)
+```
+
+We can now read the file into the R environment.
+
+```{r}
+ratings <- read.csv(dl,
+                      sep = ",",
+                      fill = TRUE)
+```
+
+Let us now define our dataset.
+
+```{r}
+dim(ratings)
+```
+
+We have `r nrow(ratings)` observations with `r length(ratings)` variables. Each row represents a review that has been given by one of 19 tasters in the dataset.  Let's list these variables.
+
+```{r echo=FALSE}
+variables <- data_frame(Variables = colnames(ratings),
+                        Description = c("Identifier",
+                                        "Country of origin of the wine",
+                                        "The full text of the review written by the taster",
+                                        "The vineyard within the winery where the grapes that made the wine are from",
+                                        "The number of points WineEnthusiast rated the wine on a scale of 1-100 (though they say they only post reviews for wines that score >=80)",
+                                        "The cost for a bottle of the wine",
+                                        "The province or state that the wine is from",
+                                        "The wine growing area in a province or state (ie Napa)",
+                                        "Sometimes there are more specific regions specified within a wine growing area (ie Rutherford inside the Napa Valley), but this value can sometimes be blank",
+                                        "Name of the taster",
+                                        "Twitter Handle of the taster",
+                                        "The title of the wine review",
+                                        "The type of grapes used to make the wine (ie Pinot Noir)",
+                                        "The winery that made the wine"))
+
+variables %>% kable() %>% kable_styling(full_width = FALSE)
+```
+
+
+
+
+## Data Exploration
+
+**Points**
+
+As we are primarly interested about the points given to each wine, let us first examine the distribution of points.
+
+Let's first look at a few statistics:
+```{r}
+
+ratings %>% select(points) %>% 
+  summarize(Min=min(points),
+            Max=max(points),
+            Average=round(mean(points),2),
+            Median=round(median(points),2),
+            "Standard Deviation"=round(sd(points),2)) %>% 
+  kable(caption = "Points Statistics", align = rep("c",5)) %>% 
+  kable_styling(full_width = FALSE)
+
+```
+We can get a better understanding of the distribution by looking at a histogram.
+
+```{r}
+ratings %>% select(points) %>% 
+  ggplot(aes(points)) +
+  geom_histogram(bins = 20)+
+  labs(title="Distribution of points", x="Points", y="Count")
+  
+```
+
+We can check if the data is normally distributed with this code:
+
+```{r}
+ratings %>% ggplot(aes(sample=points)) + 
+  geom_qq(dparams=summarize(ratings, mean=mean(points), sd=sd(points))) +
+  geom_abline() + labs(title="QQ-Plot for the Points Distribution", y="Actual", x="Theoretical")
+```
+
+We see from this plot that, although the data starts at 80 points and ends at 100 points, the normal distribution is a relatively good estimate between those two end points.
+
+**Country**
+
+Let us now turn our attention to which countries are represented. 
+
+We can compute how many different countries are represented.
+```{r}
+length(unique(ratings$country))
+```
+
+
+We can make a bar plot showing the number of reviews by country like this (for the top 10).
+
+```{r}
+ratings %>% group_by(country) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% 
+  ggplot(aes(x=reorder(country,-n),y=n)) +
+  geom_bar(stat="identity")+
+  geom_text(aes(label=n),nudge_y = 1800)+
+  labs(title="Reviews by country (top 10)", y="Number of reviews", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+We see that this is a very US-centric dataset, with about `r paste(round(100*length(which(ratings$country=="US"))/nrow(ratings)),"%",sep="")` of the reviews.
+
+We can also have a quick look at the distribution of scores by country. We notice that Austria and Germany have very high median scores and that Spain and Chile take the bottom two spots in the top 10 countries with most reviews. Additionally, in the top 10, we notice that only 5 countries have a review of 100 points: Australia, France, Italy, Portugal and the US.
+
+```{r}
+top_10_countries <- ratings %>% group_by(country) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% .$country
+
+ratings %>% filter(country %in% top_10_countries) %>% 
+  ggplot(aes(x=reorder(country,-points,FUN = median), y=points)) +
+  geom_boxplot()+
+  labs(title="Points distribution by country (top 10)", y="Points", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Variety**
+
+Let us now turn our attention to which countries are represented. 
+
+We can compute how many different grape varietals are represented.
+```{r}
+length(unique(ratings$variety))
+```
+
+To the untrained eye, 708 may seem like a lot, but let us remember that there are approximately 10,000 grape varietals in the world. Of course, not all of them are frequently found in wine. Let's look at the top 12 varieties.
+
+```{r}
+ratings %>% 
+  group_by(variety) %>% 
+  summarize(Reviews=n()) %>% 
+  top_n(12,Reviews) %>% 
+  arrange(desc(Reviews)) %>%
+  select(Variety=variety,Reviews=Reviews) %>% 
+  kable(align = rep("c",2)) %>% 
+  kable_styling(full_width = FALSE)
+```
+
+We notice that the most common variety are Pinot Noir, Chardonnay and Cabernet Sauvignon. This is not surprising as those grapes are very common in the US. We then see "Red Blend" and "Bordeaux-style Red Blend". The former is a bit dissapointing as Red Blend could litteraly mean anything. Let's see where those wines come from:
+
+```{r}
+ratings %>% filter(variety=="Red Blend") %>% 
+  group_by(country) %>% 
+  summarize(Reviews =n()) %>%
+  select(Country=country,Reviews=Reviews) %>% 
+  top_n(5,Reviews) %>% 
+  arrange(desc(Reviews)) %>% 
+  kable(align = rep("c",2)) %>% 
+  kable_styling(full_width = FALSE)
+```
+
+We are a bit surprised that Italy would have so many "Red Blends" since there are many *appelations* that would have made the data more specific. However, we are not surprised to see the US high on this list given the flexibility of winemaking regulations in the country.
+
+For wines of the old world, France for instance, we expect to see specific blends. For instance, all wines in Bordeaux would have some concentration of Cabernet Sauvignon, Cabernet Franc and Merlot, and perhaps a bit of Petit Verdot. Let's see.
+
+```{r}
+ratings %>% filter(province=="Bordeaux") %>% 
+  group_by(variety) %>% 
+  summarize(Reviews=n()) %>% 
+  select(Variety=variety,Reviews) %>% 
+  top_n(5,Reviews) %>% 
+  arrange(desc(Reviews)) %>% 
+  kable(align = rep("c",2)) %>% 
+  kable_styling(full_width = FALSE)
+```
+Our intuition is confirmed.
+
+Let us now look at the top 10 varieties and their score distribution.
+
+```{r}
+top_10_varieties <- ratings %>% group_by(variety) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% .$variety
+
+ratings %>% filter(variety %in% top_10_varieties) %>% 
+  ggplot(aes(x=reorder(variety,-points,FUN = median), y=points)) +
+  geom_boxplot()+
+  labs(title="Points distribution by variety (top 10)", y="Points", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+

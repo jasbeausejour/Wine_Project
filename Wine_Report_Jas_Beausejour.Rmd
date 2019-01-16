@@ -403,3 +403,19 @@ ratings %>% filter(Decade != "") %>% group_by(Decade) %>%
   kable_styling(full_width = FALSE)
 ```
 
+Although earlier decades seem to display higher scores, this is likely due to the fact that there are only a few reviews for these years, of very good bottles.
+
+For curiosity, let's look at the average score for the region of Bordeaux for the years 2005+. For any one with wine knowledge, the results won't be surprising: 2009, 2008 and 2010 are very high on the list. I must say that 2015 being second to last is unexpected however.
+
+```{r}
+ratings %>% filter(Vintage>2005 & province=="Bordeaux") %>% 
+  group_by(Vintage) %>% 
+  summarize("Average Score"=round(mean(points),2), Reviews = n()) %>% 
+  arrange(-`Average Score`) %>% 
+  kable(align = rep("c",3)) %>% 
+  kable_styling(full_width = F)
+```
+
+### Descriptions and Natural Language Processing
+
+In the following section, we will dive into the content of the **description** variable, which contains the text of the review written by the tasters. We will use tecniques of text mining and natural language processing inspired by the tutorial posted by Debbie Liske at [this ling](https://www.datacamp.com/community/tutorials/R-nlp-machine-learning).

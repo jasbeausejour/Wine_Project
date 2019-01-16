@@ -79,7 +79,7 @@ variables %>% kable() %>% kable_styling(full_width = FALSE)
 As we are primarly interested about the points given to each wine, let us first examine the distribution of points.
 
 Let's first look at a few statistics:
-```{r}
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
 
 ratings %>% select(points) %>% 
   summarize(Min=min(points),
@@ -145,6 +145,46 @@ ratings %>% filter(country %in% top_10_countries) %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
+**Province**
+
+Most of the time, however, knowing the country of a wine isn't sufficient to determine what to expect. For instance, a Côte-du-Rhone from France can be expected to taste very different from a Bordeaux or a Burgundy.
+
+Let us see which *provinces* are the most prevalent in our data.
+
+```{r}
+ratings %>% group_by(province) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% 
+  ggplot(aes(x=reorder(province,-n),y=n)) +
+  geom_bar(stat="identity")+
+  geom_text(aes(label=n),nudge_y = 1800)+
+  labs(title="Reviews by Province (top 10)", y="Number of reviews", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Again, we notice how skewed our data is towards the US, with California in particular. Within California, we see Napa, Russian River Valley, Paso Robles and Sonoma have a very strong showing. Weirdly enough, "California" appear again in this variable.
+
+```{r}
+ratings %>% filter(province=="California") %>% 
+  group_by(region_1) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% 
+  ggplot(aes(x=reorder(region_1,-n),y=n)) +
+  geom_bar(stat="identity")+
+  geom_text(aes(label=n),nudge_y = 300)+
+  labs(title="Reviews by Region (top 10 in California)", y="Number of reviews", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Back to the whole dataset, let's examine the score distribution by province for the top 10.
+
+```{r}
+top_10_province <- ratings %>% group_by(province) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% .$province
+
+ratings %>% filter(province %in% top_10_province) %>% 
+  ggplot(aes(x=reorder(province,-points,FUN = median), y=points)) +
+  geom_boxplot()+
+  labs(title="Points distribution by province (top 10)", y="Points", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
 **Variety**
 
 Let us now turn our attention to which countries are represented. 
@@ -206,5 +246,160 @@ ratings %>% filter(variety %in% top_10_varieties) %>%
   geom_boxplot()+
   labs(title="Points distribution by variety (top 10)", y="Points", x="")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Taster**
+
+The next variable we will examine is who exactly wrote the review. This information is held in the **taster_name** variable.
+
+There are `r length(unique(ratings$taster_name))` unique values in this variable, one of which is the absence of the rater's name. We will exclude those observations in the following analysis.
+
+Let us see who was most prolific.
+
+```{r}
+ratings %>% filter(taster_name != "") %>% group_by(taster_name) %>% summarize(n=n()) %>% 
+  ggplot(aes(x=reorder(taster_name,-n),y=n)) +
+  geom_bar(stat="identity")+
+  geom_text(aes(label=n),nudge_y = 1800)+
+  labs(title="Reviews by Taster (all)", y="Number of reviews", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We can appreciate that Roger Voss, Michael Schadner and Kerin O'Keefe have a very strong contribution to the dataset. Especially Mr. Voss... that is a lot of wine.
+
+Let us look now at a distribution of score by taster. We will only use the top 10 at this stage.
+
+```{r}
+top_10_taster <- ratings %>% filter(taster_name!="") %>% group_by(taster_name) %>% summarize(n=n()) %>% top_n(10,wt=n) %>% .$taster_name
+
+ratings %>% filter(taster_name %in% top_10_taster) %>% 
+  ggplot(aes(x=reorder(taster_name,-points,FUN = median), y=points)) +
+  geom_boxplot()+
+  labs(title="Points distribution by variety (top 10)", y="Points", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+From this graph, we can see that some tasters tend to grade wines higher (like Matt Kettmann), and others more hasrshly (like Roger Voss and Michael Schachner).
+
+**Winery**
+
+We know that some wineries have a very strong reputation and tend to systematically attract more points. Let us look at the distribution of the average score by winery.
+
+```{r}
+ratings %>% group_by(winery) %>% summarize(Avg=mean(points)) %>%
+  ggplot(aes(Avg)) +
+  geom_histogram(bins=25)+
+  labs(title="Distribution of wineries by average score", y="Wineries", x="Average Score")
+```
+
+Of course, it is possible that some of the extreme cases here are wineries that are only seldom reviewed. The average number of review per winery is:
+
+```{r}
+ratings %>% group_by(winery) %>% summarise(n=n()) %>% ungroup() %>% summarise(Average=mean(n)) %>% .$Average
+```
+
+
+At this point, it is worth looking at the wineries with an average score above 95 points, with at least 10 reviews. That's an impressive showing.
+
+```{r}
+ratings %>% group_by(winery) %>% 
+  summarise(Avg=mean(points),Reviews=n(), Price = round(mean(price),2)) %>% 
+  filter(Avg>95 & Reviews>=8) %>% arrange(-Avg) %>% 
+  select(Winery=winery, `Average Score`=Avg, Reviews = Reviews, `Average Bottle Price`=Price) %>% 
+  kable(align = rep("c",3)) %>% 
+  kable_styling(full_width = F)
+```
+
+**Price**
+
+Finally, let us look at the price variable, which is the only numerical variable we have at our disposal, thus far, to build our model. Let's look at a distribution.
+
+```{r}
+ratings %>% filter(price != "") %>% 
+  summarize(Min=min(price),
+            Max=max(price),
+            Average=round(mean(price),2),
+            Median=round(median(price),2),
+            "Standard Deviation"=round(sd(price),2)) %>% 
+  kable(caption = "Price Statistics", align = rep("c",5)) %>% 
+  kable_styling(full_width = FALSE)
+```
+
+
+We can build a histogram to get a better view.
+
+```{r}
+ratings %>% filter(price != "") %>% 
+  ggplot(aes(price)) +
+  geom_histogram(bins=25)+
+  scale_x_log10()+
+  labs(title="Distribution of reviews by bottle price", y="Count", x="Price per Bottle")
+```
+
+Now, the question on everyone's lip is whether there is a correlation between price and quality (points). Let's look at a scatterplot.
+
+```{r}
+ratings %>% filter(price !="") %>% 
+  ggplot(aes(x=price,y=points))+
+  geom_point()+
+  scale_x_log10()+
+  labs(title="Price distribution by points level", y="Points", x="Bottle Price (log10)")
+```
+
+We can see from this graph that there does seem to be a slight correlation, with most of the very low scores in the low-end of the price range. We also notice how, as we go up in points, we tend to shift to the right ot the price range. 
+
+To better understand this phenomenon, let's look at the average price at each point level.
+
+```{r}
+ratings %>% filter(price != "") %>% group_by(points) %>% 
+  summarise(`Average Price`=mean(price)) %>% 
+  ggplot(aes(x=points, y=`Average Price`)) + 
+  geom_bar(stat = "identity")+
+  geom_text(aes(label=round(`Average Price`)),nudge_y = 20)+
+  labs(title="Average Price Point per Points Level", x="Points")
+```
+
+Here, we clearly see that bottles over and above 90 points tend to be much more expensive. On average, bottles with 95+ points cost more than $100. Only very expensive bottles receive 100 points.
+
+**Title and Vintage**
+
+From the title of the review, we are often able to extract the vintage of the wine that was tasted. Let us try to do this systematically.
+
+```{r}
+year_pattern <- "\\d\\d\\d\\d"
+ratings <- ratings %>% mutate(Vintage = as.numeric(str_extract(title,year_pattern)))
+
+# Remove anything that could be an error. We will assume that no wine in the dataset was made before 1910.
+ratings$Vintage <-  ifelse(ratings$Vintage>2018,"",ratings$Vintage)
+ratings$Vintage <-  ifelse(ratings$Vintage<1910,"",ratings$Vintage)
+
+# Create decades to make visualization easier
+
+ratings <- ratings %>% 
+  mutate(Decade =
+           ifelse(ratings$Vintage %in% 1900:1909, "1900s",
+           ifelse(ratings$Vintage %in% 1910:1919, "1910s",
+           ifelse(ratings$Vintage %in% 1920:1929, "1920s",
+           ifelse(ratings$Vintage %in% 1930:1939, "1930s",
+           ifelse(ratings$Vintage %in% 1940:1949, "1940s",
+           ifelse(ratings$Vintage %in% 1950:1959, "1950s",
+           ifelse(ratings$Vintage %in% 1960:1969, "1960s",
+           ifelse(ratings$Vintage %in% 1970:1979, "1970s",
+           ifelse(ratings$Vintage %in% 1980:1989, "1980s",
+           ifelse(ratings$Vintage %in% 1990:1999, "1990s",
+           ifelse(ratings$Vintage %in% 2000:2009, "2000s",
+           ifelse(ratings$Vintage %in% 2010:2019, "2010s",
+                  "")))))))))))))
+
+```
+
+
+Let's now look at this new variable:
+
+```{r}
+ratings %>% filter(Decade != "") %>% group_by(Decade) %>% 
+  summarise(Reviews = n(), `Average Score`=round(mean(points),2)) %>% 
+  kable(align = rep("c",3)) %>% 
+  kable_styling(full_width = FALSE)
 ```
 

@@ -419,3 +419,56 @@ ratings %>% filter(Vintage>2005 & province=="Bordeaux") %>%
 ### Descriptions and Natural Language Processing
 
 In the following section, we will dive into the content of the **description** variable, which contains the text of the review written by the tasters. We will use tecniques of text mining and natural language processing inspired by the tutorial posted by Debbie Liske at [this ling](https://www.datacamp.com/community/tutorials/R-nlp-machine-learning).
+
+First, let us load some more libraries.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+if(!require(tidytext)) install.packages("tidytext", repos = "http://cran.us.r-project.org")
+if(!require(wordcloud2)) install.packages("wordcloud2", repos = "http://cran.us.r-project.org")
+if(!require(circlize)) install.packages("circlize", repos = "http://cran.us.r-project.org")
+if(!require(yarrr)) install.packages("yarrr", repos = "http://cran.us.r-project.org")
+
+
+library(gridExtra)
+library(tidytext)
+library(wordcloud2)
+library(circlize)
+library(yarrr)
+```
+
+We now create a quick function to get rid of English contractions
+
+```{r}
+fix.contractions <- function(doc) {
+  # "won't" is a special case as it does not expand to "wo not"
+  doc <- gsub("won't", "will not", doc)
+  doc <- gsub("can't", "can not", doc)
+  doc <- gsub("n't", " not", doc)
+  doc <- gsub("'ll", " will", doc)
+  doc <- gsub("'re", " are", doc)
+  doc <- gsub("'ve", " have", doc)
+  doc <- gsub("'m", " am", doc)
+  doc <- gsub("'d", " would", doc)
+  # 's could be 'is' or could be possessive: it has no expansion
+  doc <- gsub("'s", "", doc)
+  return(doc)
+}
+```
+
+Let's apply it.
+
+```{r}
+ratings$description <- sapply(ratings$description,fix.contractions)
+```
+
+Let us now create a data frame in a tidy format, where each word has a row. I also anti-join the dataset *stop_words* to get rid of overly common words like "where", "has", "yet", etc.
+
+```{r}
+description_words_filtered <- ratings %>% 
+  unnest_tokens(word,description) %>% 
+  anti_join(stop_words) %>% 
+  distinct()
+```
+
+Let us see what this data looks like.

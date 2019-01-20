@@ -428,6 +428,7 @@ if(!require(tidytext)) install.packages("tidytext", repos = "http://cran.us.r-pr
 if(!require(wordcloud2)) install.packages("wordcloud2", repos = "http://cran.us.r-project.org")
 if(!require(circlize)) install.packages("circlize", repos = "http://cran.us.r-project.org")
 if(!require(yarrr)) install.packages("yarrr", repos = "http://cran.us.r-project.org")
+if(!require(udpipe)) install.packages("udpipe", repos = "http://cran.us.r-project.org")
 
 
 library(gridExtra)
@@ -435,6 +436,7 @@ library(tidytext)
 library(wordcloud2)
 library(circlize)
 library(yarrr)
+library(udpipe)
 ```
 
 We now create a quick function to get rid of English contractions
@@ -456,19 +458,73 @@ fix.contractions <- function(doc) {
 }
 ```
 
-Let's apply it.
+Let's apply it, and convert everything to lower case.
 
 ```{r}
 ratings$description <- sapply(ratings$description,fix.contractions)
+ratings$description <- tolower(ratings$description)
 ```
 
-Let us now create a data frame in a tidy format, where each word has a row. I also anti-join the dataset *stop_words* to get rid of overly common words like "where", "has", "yet", etc.
+Let us now create a data frame in a tidy format, where each word has a row. We use the **udpipe** package to also lemmatize each word (e.g., aromas = aroma) and get its Part of Speech (e.g.,  adjective, noun, etc.). I anti-join the dataset *stop_words* to get rid of overly common words like "where", "has", "yet", etc. Finally, I only keep words with 3 characters or more, since most small words do not reveal that much meaning.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+ud_model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(ud_model$file_model)
+
+#this will take a while!
+
+words_in_descriptions <- as.data.frame(udpipe_annotate(ud_model, 
+                                   x = ratings$description, 
+                                   doc_id = ratings$X)) %>% 
+  rename(word="token") %>% 
+  anti_join(stop_words) %>% 
+  filter(nchar(word)>=3 & upos != "PUNCT")
+```
+
+For the sake of speeding things up in the future, I save a copy of this data frame, which I will upload onto my GitHub repo.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+save(words_in_descriptions, file="words_in_descriptions.rda")
+```
+
+
+Because of how long the above step takes, I've decided to save a copy of that data frame to my GitHub repository. I've deactivated the above code and instead am downloading the file here.
 
 ```{r}
-description_words_filtered <- ratings %>% 
-  unnest_tokens(word,description) %>% 
-  anti_join(stop_words) %>% 
-  distinct()
+
 ```
 
-Let us see what this data looks like.
+
+The first thing we can look at is the lenght of the descriptions.
+
+```{r}
+length_of_decription <- description_words_filtered %>% group_by(X) %>% summarise(Length=n())
+
+length_of_decription %>% ggplot(aes(x=Length))+
+  geom_histogram(bins=50)+
+  labs(title="Distribution of description length",x="Lenght",y="Count")
+
+```
+ 
+Let us see if there seems to be a relationship between the length of the descriptions and the points.
+
+```{r}
+ratings <- ratings %>% left_join(length_of_decription,by = "X")
+
+ratings %>% ggplot(aes(x=Length,y=points))+
+  geom_point()+
+  labs(title="Relationship between description length and points", x="Description length (words)", y="Points")
+
+```
+
+As we can see in this graph, there seems to be a tendency to witness longer descriptions for bottles with higher points.
+
+Next, let's look at the most popular words being used.
+
+```{r}
+description_words_filtered %>% group_by(word) %>% 
+  summarise(Count=n()) %>% 
+  arrange(desc(Count)) %>% 
+  write.csv(file="common_words.csv")
+```
+
